@@ -1,7 +1,7 @@
 import requests
 import json
 import re
-from config import url_home, url_estacion
+from config import url_home, url_estacion, url_daily
 
 def get_first_data(status_message : bool = True) -> dict:
     """Obtiene los datos de las estaciones meteorológicas desde la página de
@@ -34,20 +34,17 @@ def get_first_data(status_message : bool = True) -> dict:
     return data
 
 
-def state_key_and_id(id_estacion: int, status_message : bool = True) ->  tuple[str|None , str|None ]:
-    """Encuentra el id de la estación correspondiente al id del servidor
-    y encuentra la clave para el estado en el que se encuentra la estación
+def get_key_real_id_file(id_estacion: int, status_message : bool = True) ->  str:
+    """ Realiza una petición GET a la URL especificada por el id secundario para descargar 
+    el texto que contiene el id y la clave por estado 
 
     Estos se usan para completar los urls de los datos por estación
-
-    Realiza una petición GET a la URL especificada para descargar el texto 
-    que contiene el id y la clave por estado que se obtienen mediante expresiones regulares
 
     Args:
         url (str): el id_preliminar de la estación
 
     Returns:
-        tuple: clave del estado, id
+        str: texto que incluye el state_key y real_id
 
     Raises:
         requests.exceptions.RequestException: Si la petición HTTP falla
@@ -58,12 +55,10 @@ def state_key_and_id(id_estacion: int, status_message : bool = True) ->  tuple[s
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         if status_message: print("Status code:", response.status_code)
-
-        key, id = re.findall(r'([a-z]*)..dia([0-9]*).txt"',response.text)[0]
-        return key, id
+        return response.text
     except requests.exceptions.RequestException as err:
         if status_message: print(f"Error de conexión o HTTP: {err}")
-        return None, None
+        return ""
 
 
 
