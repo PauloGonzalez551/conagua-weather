@@ -1,6 +1,5 @@
 import requests
 import json
-import re
 from config import url_home, url_estacion, url_daily
 
 def get_first_data(status_message : bool = True) -> dict:
