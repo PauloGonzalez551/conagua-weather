@@ -1,6 +1,30 @@
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import json
-from config import url_home, url_estacion, url_daily
+
+from conagua_scraper.config import url_home, url_estacion, url_daily
+
+def create_session()-> requests.Session:
+    session = requests.Session()
+
+    retries = Retry(
+        total=3,
+        backoff_factor=0.5,
+        status_forcelist=(500, 502, 503, 504)
+    )
+
+    adapter = HTTPAdapter(max_retries=retries)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+
+    session.headers.update({
+        "User-Agent": "conagua-weather-scraper/0.1"
+    })
+
+    return session
+
+    
 
 def get_first_data(status_message : bool = True) -> dict:
     """Obtiene los datos de las estaciones meteorológicas desde la página de

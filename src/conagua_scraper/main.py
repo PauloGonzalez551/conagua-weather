@@ -1,7 +1,7 @@
 from conagua_scraper.config import DB_PATH, DATA_DIR
 from conagua_scraper.database import (connect_database,
+                                    delete_tables,
                                     create_tables,
-                                    load_stations,
                                     load_state,
                                     get_existing_state_keys
                                     )
@@ -20,6 +20,11 @@ def main() -> None:
         create_tables(conn)
 
     print(f"Database ready at {DB_PATH}")
+
+    # with connect_database(DB_PATH) as conn:
+    #     delete_tables(conn)
+
+    # print(f"Database deleted at {DB_PATH}")
 
     
 

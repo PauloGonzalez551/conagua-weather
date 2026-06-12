@@ -7,5 +7,5 @@ DB_PATH = DATA_DIR / "estaciones.sqlite3"
 
 
 url_home = 'https://smn.conagua.gob.mx/tools/PHP/ConsultaCapas.php?tipo=ENCS&clave=Act'
-url_estacion = 'https://smn.conagua.gob.mx/tools/PHP/GetInfoENCS.php?id_estacion='
-url_daily = 'https://smn.conagua.gob.mx/tools/RESOURCES/Normales_Climatologicas/Diarios/'
+url_estacion = 'https://smn.conagua.gob.mx/tools/PHP/GetInfoENCS.php?id_estacion={station_number}'
+url_daily = 'https://smn.conagua.gob.mx/tools/RESOURCES/Normales_Climatologicas/Diarios/{state_key}/dia{real_id}.txt'
