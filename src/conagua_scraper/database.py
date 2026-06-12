@@ -70,7 +70,7 @@ def get_existing_state_keys(conn: sqlite3.Connection) -> set[int]:
 
 def load_states_batch(
     conn: sqlite3.Connection,
-    states_info: list[tuple[str, int]],
+    states_info: list[tuple[str, str]],
 ) -> None:
     conn.executemany(
         """
@@ -134,7 +134,7 @@ def load_stations_batch(
                 longitude,
                 elevation
             )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         stations_info,
     )

@@ -1,11 +1,19 @@
 import re
 
-def parse_key_real_id(text : str, status_message:bool =True) -> tuple [str|None, str|None]:
+
+def parse_key_real_id(text : str) -> tuple [str|None, str|None]:
+    """Recibe el texto que incluye el state key, real id y los extrae
+    
+    Args:
+        text(str): texto obtenido del numero de estacion
+    
+    Returns:
+        tuple: state_key, real_id
+    """
     try:
         key, real_id = re.findall(r'([a-z]*)..dia([0-9]*).txt"',text)[0]
         return key, real_id
     except IndexError:
-        if status_message: print("Error: No se pudo extraer la llave o el ID del texto.")
         return None, None
     
 
@@ -40,23 +48,25 @@ def parse_metadata(text: str) -> tuple[str|None , str|None, str|None, str|None, 
     Returns:
         tuple: estado, nombre, municipio, situacion, latitud, longitud, altitud
     """
+    try:
+        start = text.find("ESTACIÓN")
+        end = text.find("msnm") + 4
+        header_block = text[start:end]
 
-    start = text.find("ESTACIÓN")
-    end = text.find("msnm") + 4
-    header_block = text[start:end]
+        matches = re.findall(r"([A-ZÁÉÍÓÚÑ-]+)\s*:\s*(.+)", header_block)
+        data = {key.strip(): val.strip() for key, val in matches}
 
-    matches = re.findall(r"([A-ZÁÉÍÓÚÑ-]+)\s*:\s*(.+)", header_block)
-    data = {key.strip(): val.strip() for key, val in matches}
+        estado = data.get("ESTADO", "")
+        nombre = data.get("NOMBRE", "")
+        municipio = data.get("MUNICIPIO", "")
+        situacion = data.get("SITUACIÓN", "")
+        latitud = data.get("LATITUD", "").replace("°", "").strip()
+        longitud = data.get("LONGITUD", "").replace("°", "").strip()
+        altitud = data.get("ALTITUD", "").replace("msnm", "").strip()
 
-    estado = data.get("ESTADO", "")
-    nombre = data.get("NOMBRE", "")
-    municipio = data.get("MUNICIPIO", "")
-    situacion = data.get("SITUACIÓN", "")
-    latitud = data.get("LATITUD", "").replace("°", "").strip()
-    longitud = data.get("LONGITUD", "").replace("°", "").strip()
-    altitud = data.get("ALTITUD", "").replace("msnm", "").strip()
-
-    return estado, nombre, municipio, situacion, latitud, longitud, altitud
+        return estado, nombre, municipio, situacion, latitud, longitud, altitud
+    except:
+        return None, None, None, None, None, None, None
 
 def catch_nulls(value:str, status_message:bool = True)-> float|None:
     """Returns None if the value = 'NULO'
