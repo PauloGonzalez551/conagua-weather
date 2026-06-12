@@ -8,13 +8,14 @@ def get_first_data(status_message : bool = True) -> dict:
 
     Realiza una petición GET a la URL especificada para descargar y parsear
     el archivo JSON que contiene los identificadores y metadatos de las
-    estaciones.
+    estaciones. s
 
     Args:
         url (str): La URL del endpoint o página principal de Conagua.
 
     Returns:
-        dict: Un diccionario con la información de las estaciones, en el que se incluye un id rudimentario de cada estación
+        dict: Un diccionario con la información de las estaciones, en el que se incluye
+        un id rudimentario de cada estación
               Retorna un diccionario vacío si la decodificación del JSON falla.
 
     Raises:
@@ -58,6 +59,11 @@ def get_key_real_id_file(id_estacion: int, status_message : bool = True) ->  str
     except requests.exceptions.RequestException as err:
         if status_message: print(f"Error de conexión o HTTP: {err}")
         return ""
+    
+def get_daily_file(state_key:str, real_id:str)->str:
+    url = url_daily+state_key+'/dia'+real_id+'.txt'
+    response = requests.get(url)
+    return response.text
 
 
 

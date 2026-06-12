@@ -3,15 +3,16 @@ import re
 def parse_key_real_id(text : str, status_message:bool =True) -> tuple [str|None, str|None]:
     try:
         key, real_id = re.findall(r'([a-z]*)..dia([0-9]*).txt"',text)[0]
+        return key, real_id
     except IndexError:
         if status_message: print("Error: No se pudo extraer la llave o el ID del texto.")
-    return key, real_id
+        return None, None
+    
 
 
 def parse_metadata(text: str) -> tuple[str|None , str|None, str|None, str|None, str|None, str|None, str|None  ]:
-    """" Encuentra el bloque de metadata dentro de la informacion diaria
+    """ Encuentra el bloque de metadata dentro de la informacion diaria
     y obtiene los valores de metadata dentro del bloque
-
     considerando el siguiente formato:
         COMISIÓN NACIONAL DEL AGUA
         COORDINACIÓN GENERAL DEL SERVICIO METEOROLÓGICO NACIONAL

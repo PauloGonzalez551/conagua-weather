@@ -44,4 +44,17 @@ def create_tables(conn:sqlite3.Connection)->None:
           FOREIGN KEY (station_id) REFERENCES stations (station_id)
       )
   ''')
+    
+def get_existing_state_keys(conn: sqlite3.Connection) -> set[int]:
+    cursor = conn.cursor()
 
+    cursor.execute("SELECT state_key FROM states")
+    return {row[0] for row in cursor.fetchall()}
+
+def load_state(conn:sqlite3.Connection, state_name, state_key)->None:
+    cursor = conn.cursor()
+
+    cursor.execute('''
+            INSERT OR IGNORE INTO states (name, state_key)
+            VALUES (? , ?)
+        ''', (state_name, state_key))
