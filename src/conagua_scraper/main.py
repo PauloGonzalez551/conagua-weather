@@ -1,4 +1,6 @@
 import logging
+import argparse
+
 from conagua_scraper.config import DB_PATH, DATA_DIR
 from conagua_scraper.database import (connect_database,
                                     delete_tables,
@@ -21,6 +23,13 @@ def setup_logging()->None:
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+
+def delete_database()->None:
+
+    with connect_database(DB_PATH) as conn:
+        delete_tables(conn)
+
+    print(f"Database deleted at {DB_PATH}")
 
 def setup_database()->None:
 
@@ -115,9 +124,34 @@ def load_initial_metadata()->None:
 
 
 def main() -> None:
-    setup_logging()
-    setup_database()
-    load_initial_metadata()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "command",
+        choices=["setup", "delete", "metadata", "update", "all"]
+    )
+
+    args = parser.parse_args()
+
+    if args.command == "setup":
+        setup_database()
+    if args.command == "delete":
+        print("ADVERTENCIA: Esta acción es irreversible y perderás todos los datos.")
+        confirmacion = input(
+            "Para continuar, escribe exactamente la palabra 'ELIMINAR': "
+        )
+
+        if confirmacion.strip() == "ELIMINAR":
+            delete_database()
+            print("Base de datos eliminada.")
+        else:
+            print("La palabra no coincide. Acción abortada.")
+    elif args.command == "metadata":
+        load_initial_metadata()
+    elif args.command == "update":
+        logger.warning("Update function hasn't been created yet")
+    elif args.command == "all":
+        setup_database()
+        load_initial_metadata()
 
 if __name__ == "__main__":
     main()
