@@ -104,14 +104,15 @@ def remove_header(text: str)-> str:
     return ""
     
 
-def daily_data(text:str)-> list[tuple]:
+def daily_data(text:str, real_id: str)-> list[tuple[str, str, float|None, float|None, float|None, float|None]]:
     """Parses the data from the table climatología diaria de alguna estación
 
     Args:
         text(str): datos de la tabla de climatología diaria
     
     Returns:
-        (list): lista de datos de la tabla por dia
+        (list): lista de datos de la tabla por dia 
+        (date, precip, evap, tmax, tmin)
     """
     daily_records = []
 
@@ -121,9 +122,12 @@ def daily_data(text:str)-> list[tuple]:
             continue
 
         fecha, precip, evap, tmax, tmin = parts
-        daily_records.append((fecha,
+        daily_records.append(
+            (real_id,
+            fecha,
             catch_nulls(precip),
             catch_nulls(evap),
             catch_nulls(tmax),
-            catch_nulls(tmin)))
+            catch_nulls(tmin)),
+            )
     return daily_records

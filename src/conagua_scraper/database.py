@@ -43,14 +43,14 @@ def create_tables(conn:sqlite3.Connection)->None:
     
     cursor.execute('''
       CREATE TABLE IF NOT EXISTS daily_records (
-          station_id TEXT NOT NULL,
+          station_number TEXT NOT NULL,
           date TEXT NOT NULL,
           precip REAL,
           evap REAL,
           tmax REAL,
           tmin REAL,
-          PRIMARY KEY (station_id, date),
-          FOREIGN KEY (station_id) REFERENCES stations (real_id)
+          PRIMARY KEY (station_number, date),
+          FOREIGN KEY (station_number) REFERENCES stations (station_number)
       )
   ''')
     
@@ -60,13 +60,6 @@ def get_existing_state_keys(conn: sqlite3.Connection) -> set[int]:
     cursor.execute("SELECT state_key FROM states")
     return {row[0] for row in cursor.fetchall()}
 
-# def load_state(conn:sqlite3.Connection, state_name, state_key)->None:
-#     cursor = conn.cursor()
-
-#     cursor.execute('''
-#             INSERT OR IGNORE INTO states (name, state_key)
-#             VALUES (? , ?)
-#         ''', (state_name, state_key))
 
 def load_states_batch(
     conn: sqlite3.Connection,
@@ -79,43 +72,6 @@ def load_states_batch(
         """,
         states_info,
     )
-    
-# def load_station(conn:sqlite3.Connection,
-#                 station_number,
-#                 real_id,
-#                 state_key,
-#                 name,
-#                 municipio,
-#                 situacion,
-#                 latitude,
-#                 longitude,
-#                 elevation
-# )->None:
-#     cursor = conn.cursor()
-
-#     cursor.execute('''
-#             INSERT OR IGNORE INTO stations (station_number,
-#                 real_id,
-#                 state_key,
-#                 name,
-#                 municipio,
-#                 situacion,
-#                 latitude,
-#                 longitude,
-#                 elevation
-#                 )
-#             VALUES (?, ?, ?, ?, ?, ?, ?, ? ,?)
-#             ''', (station_number,
-#                     real_id,
-#                     state_key,
-#                     name,
-#                     municipio,
-#                     situacion,
-#                     latitude,
-#                     longitude,
-#                     elevation
-#                     )
-#                 )
     
 
 def load_stations_batch(
@@ -138,3 +94,36 @@ def load_stations_batch(
         """,
         stations_info,
     )
+
+def load_daily_data_batch(
+    conn: sqlite3.Connection,
+    records_by_batch: list[tuple],
+) -> None:
+    conn.executemany(
+        """
+        INSERT OR IGNORE INTO daily_records (station_number,
+                date,
+                precip,
+                evap,
+                tmax,
+                tmin
+            )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        records_by_batch,
+    )
+
+def key_id_from_db(conn:sqlite3.Connection)->list[tuple[str, str]]:
+    """Selects the state key and real id from the stations table
+
+    Args:
+        conn(Connection):
+
+    Returns:
+        list: list of tuples (state_key, real_id)
+    """
+    cursor = conn.cursor()
+
+    cursor.execute('''SELECT state_key, real_id , station_number FROM stations''')
+
+    return cursor.fetchall()

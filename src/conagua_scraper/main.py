@@ -1,5 +1,8 @@
 import logging
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+
 
 from conagua_scraper.config import DB_PATH, DATA_DIR
 from conagua_scraper.database import (connect_database,
@@ -7,22 +10,28 @@ from conagua_scraper.database import (connect_database,
                                     create_tables,
                                     load_states_batch,
                                     load_stations_batch,
+                                    load_daily_data_batch,
+                                    key_id_from_db,
                                     )
 from conagua_scraper.scraper import (get_first_data,
                                     get_key_real_id_file,
                                     get_daily_file,
                                     create_session,
                                      )
-from conagua_scraper.parser import parse_key_real_id, parse_metadata
+from conagua_scraper.parser import (parse_key_real_id,
+                                    parse_metadata,
+                                    remove_header,
+                                    daily_data,
+                                    )
 
+from conagua_scraper.config import setup_logging
 logger = logging.getLogger(__name__)
+_thread_local = threading.local()
 
-def setup_logging()->None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+def get_thread_session():
+    if not hasattr(_thread_local, "session"):
+        _thread_local.session = create_session()
+    return _thread_local.session
 
 def delete_database()->None:
 
@@ -39,11 +48,6 @@ def setup_database()->None:
         create_tables(conn)
 
     print(f"Database ready at {DB_PATH}")
-
-    # with connect_database(DB_PATH) as conn:
-    #     delete_tables(conn)
-
-    # print(f"Database deleted at {DB_PATH}")
 
 def load_initial_metadata()->None:
     states_to_insert = {}
@@ -121,9 +125,78 @@ def load_initial_metadata()->None:
     
     logger.info("Inserted metadata into database")
 
+def fetch_daily_record(state_key:str, real_id:str, station_number:str)->tuple:
+    session = get_thread_session()
+    raw_data = remove_header(
+        get_daily_file(session,
+                       state_key=state_key,
+                       real_id=real_id)
+                       )
+    return daily_data(raw_data, station_number)
+
+def update_all_daily_records()->None:
+    batch_size = 5_000
+    batch_to_store = []
+    total_inserted = 0
+    failed_stations = 0
+    max_workers = 8
+
+    with connect_database(DB_PATH) as conn:
+        keys_ids = key_id_from_db(conn)
+
+    with connect_database(DB_PATH) as conn:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                    executor.submit(fetch_daily_record, state_key, real_id, station_number)
+                    for state_key, real_id, station_number in keys_ids[:10]
+                ]
+            total_stations = len(futures)
+
+            for index, future in enumerate(as_completed(futures), start=1):
+                try:
+                    result = future.result()
+                    print(result[0])
+                except Exception:
+                    failed_stations += 1
+                    logger.exception("Failed to process one stattion")
+                    continue
+
+                if result is None:
+                    continue
+
+                batch_to_store.extend(result)
+
+                if len(batch_to_store) >= batch_size:
+                    load_daily_data_batch(conn, batch_to_store)
+                    total_inserted += len(batch_to_store)
+
+                    logger.info(
+                        "Inserted batch of %d records, total inserted so far %d", 
+                        len(batch_to_store),
+                        total_inserted,
+                        )
+                    
+                    batch_to_store.clear()
+                
+                if index % 100 == 0:
+                    logger.info("Processed %d/%d stations", index, total_stations)
+
+
+            if batch_to_store:
+                load_daily_data_batch(conn, batch_to_store)
+                total_inserted += len(batch_to_store)
+                logger.info("Inserted final batch of %d records", len(batch_to_store))
+
+    logger.info(
+        "Finished daily records update: %d records inserted, %d failed stations",
+        total_inserted,
+        failed_stations,
+        )
+
 
 
 def main() -> None:
+    setup_logging()
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "command",
@@ -134,7 +207,7 @@ def main() -> None:
 
     if args.command == "setup":
         setup_database()
-    if args.command == "delete":
+    elif args.command == "delete":
         print("ADVERTENCIA: Esta acción es irreversible y perderás todos los datos.")
         confirmacion = input(
             "Para continuar, escribe exactamente la palabra 'ELIMINAR': "
@@ -148,7 +221,7 @@ def main() -> None:
     elif args.command == "metadata":
         load_initial_metadata()
     elif args.command == "update":
-        logger.warning("Update function hasn't been created yet")
+        update_all_daily_records()
     elif args.command == "all":
         setup_database()
         load_initial_metadata()
