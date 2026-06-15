@@ -29,6 +29,18 @@ logger = logging.getLogger(__name__)
 _thread_local = threading.local()
 
 def get_thread_session():
+    """Obtiene o inicializa la sesión HTTP asignada exclusivamente al hilo actual.
+
+    Utiliza el almacenamiento local de hilos (Thread-Local Storage) para garantizar
+    que cada hilo del Pool tenga su propia instancia de 'requests.Session'. Esto
+    evita problemas de contención de cerrojos (lock contention) y corrupción de 
+    estado en operaciones concurrentes, al mismo tiempo que permite la reutilización 
+    de sockets TCP (HTTP Keep-Alive) dentro del mismo hilo.
+
+    Returns:
+        requests.Session: Un objeto de sesión HTTP configurado y aislado para 
+        el hilo que invoca la función.
+    """
     if not hasattr(_thread_local, "session"):
         _thread_local.session = create_session()
     return _thread_local.session
@@ -41,7 +53,8 @@ def delete_database()->None:
     print(f"Database deleted at {DB_PATH}")
 
 def setup_database()->None:
-
+    """Garantiza la existencia del directorio de datos e inicializa la base de datos.
+    """
     DATA_DIR.mkdir(exist_ok=True)
 
     with connect_database(DB_PATH) as conn:
@@ -50,6 +63,27 @@ def setup_database()->None:
     print(f"Database ready at {DB_PATH}")
 
 def load_initial_metadata()->None:
+    """Orquesta el scraping, parseo y almacenamiento del catálogo inicial de estaciones.
+
+    El proceso se ejecuta en las siguientes etapas secuenciales:
+    1. Obtiene la lista base de estaciones desde el mapa/página principal de Conagua.
+    2. Descarga de forma síncrona el identificador real (`real_id`) y el estado (`state_key`) 
+       asociados a cada número de estación.
+    3. Descarga el archivo climatológico de cada estación para extraer sus metadatos geográficos 
+       e institucionales (nombre, municipio, latitud, longitud, elevación, etc.).
+    4. Clasifica las estaciones con fallos de metadatos para guardarlas con valores nulos (para 
+       no perder el registro) y cataloga los nombres de los estados de forma única.
+    5. Guarda de forma masiva (en lotes) la información recolectada en las tablas 'states' y 
+       'stations' utilizando una única conexión de base de datos al final del proceso.
+
+    Métricas registradas por el logger:
+        - total_stations: Cantidad total de estaciones encontradas inicialmente.
+        - skipped_stations: Estaciones descartadas por no devolver ID real o Clave de Estado.
+        - failed_stations: Estaciones sin archivo de metadatos legible (se insertan con valores None).
+
+    Raises:
+        requests.RequestException: Si ocurren fallos críticos de red durante el scraping.
+        sqlite3.Error: Si ocurre una violación de restricciones al insertar los lotes en la base de datos."""
     states_to_insert = {}
     stations_to_insert =[]
     first_data = get_first_data()
@@ -125,7 +159,28 @@ def load_initial_metadata()->None:
     
     logger.info("Inserted metadata into database")
 
-def fetch_daily_record(state_key:str, real_id:str, station_number:str)->tuple:
+def fetch_daily_record(state_key:str, real_id:str, station_number:str)->list[tuple]:
+    """Descarga, limpia y estructura el registro histórico diario de una estación.
+    
+    Solicita la sesión HTTP persistente asignada al hilo actual, descarga el
+    archivo de climatología de Conagua, remueve sus encabezados y parsea las
+    filas convirtiéndolas en registros listos para la base de datos.
+
+    Args: 
+        state_key(str): clave de estado
+        real_id(str): id de la estación
+        station_number(str): numero de estación
+
+    Returns: 
+        list[tuple]: Una lista de tuplas donde cada tupla representa las lecturas
+        de un día con la estructura exacta:
+        (station_number, date, precip, evap, tmax, tmin)
+
+    Raises: 
+        requests.RequestException: Si ocurren fallos críticos de red durante el scraping.
+
+        
+    """
     session = get_thread_session()
     raw_data = remove_header(
         get_daily_file(session,
@@ -135,6 +190,19 @@ def fetch_daily_record(state_key:str, real_id:str, station_number:str)->tuple:
     return daily_data(raw_data, station_number)
 
 def update_all_daily_records()->None:
+    """Descarga y actualiza de forma concurrente los registros climáticos diarios.
+
+    Obtiene las claves de las estaciones desde la base de datos, descarga los
+    registros históricos utilizando un Pool de hilos y almacena las lecturas
+    en SQLite en bloques optimizados (batches) para evitar saturar la memoria
+    RAM.
+
+    Raises:
+        sqlite3.OperationalError: Si las tablas de la base de datos no han
+          sido inicializadas previamente con el comando 'setup'.
+        requests.RequestException: Si ocurren fallos críticos de red durante el scraping.
+
+    """
     batch_size = 5_000
     batch_to_store = []
     total_inserted = 0
@@ -148,14 +216,13 @@ def update_all_daily_records()->None:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                     executor.submit(fetch_daily_record, state_key, real_id, station_number)
-                    for state_key, real_id, station_number in keys_ids[:10]
+                    for state_key, real_id, station_number in keys_ids[1000:]
                 ]
             total_stations = len(futures)
 
             for index, future in enumerate(as_completed(futures), start=1):
                 try:
                     result = future.result()
-                    print(result[0])
                 except Exception:
                     failed_stations += 1
                     logger.exception("Failed to process one stattion")
@@ -170,11 +237,12 @@ def update_all_daily_records()->None:
                     load_daily_data_batch(conn, batch_to_store)
                     total_inserted += len(batch_to_store)
 
-                    logger.info(
-                        "Inserted batch of %d records, total inserted so far %d", 
-                        len(batch_to_store),
-                        total_inserted,
-                        )
+                    if index % 50 == 0:
+                        logger.info(
+                            "Inserted batch of %d records, total inserted so far %d", 
+                            len(batch_to_store),
+                            total_inserted,
+                            )
                     
                     batch_to_store.clear()
                 
@@ -196,6 +264,16 @@ def update_all_daily_records()->None:
 
 
 def main() -> None:
+    """Punto de entrada principal para la interfaz de línea de comandos (CLI).
+
+    Configura el sistema de logs, parsea los argumentos pasados por la
+    terminal y enruta la ejecución hacia los submódulos correspondientes:
+    - 'setup': Inicializa el esquema de la base de datos.
+    - 'delete': Elimina de forma segura la base de datos actual.
+    - 'metadata': Descarga y cataloga las estaciones disponibles.
+    - 'update': Descarga los registros diarios históricos de las estaciones.
+    - 'all': Ejecuta todo el pipeline desde cero.
+    """
     setup_logging()
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -225,6 +303,7 @@ def main() -> None:
     elif args.command == "all":
         setup_database()
         load_initial_metadata()
+        update_all_daily_records()
 
 if __name__ == "__main__":
     main()
