@@ -62,6 +62,121 @@ def setup_database()->None:
 
     print(f"Database ready at {DB_PATH}")
 
+def fetch_metadata(station_number:str)-> tuple[tuple,tuple] | None:
+    session = get_thread_session()
+
+    state_key, real_id = parse_key_real_id(
+                get_key_real_id_file(session, station_number)
+                )
+    
+    if state_key is None or real_id is None:
+        logger.warning("Skipping station %s because state_key or real_id are missing", station_number)
+        return None
+    
+    state, name, mun, situation, lat, lon, elev = parse_metadata(
+                get_daily_file(session, state_key, real_id)
+                )
+    if state is None: 
+                logger.warning("No metadata could be found for station %s", station_number)
+    station_row = (
+                station_number,
+                real_id,
+                state_key,
+                name,
+                mun,
+                situation,
+                lat,                     
+                lon,
+                elev,
+                )
+    state_row = (state, state_key)
+
+    return state_row, station_row
+             
+def load_initial_metadata_conc()->None:
+    """Orquesta el scraping, parseo y almacenamiento del catálogo inicial de estaciones.
+
+    El proceso se ejecuta en las siguientes etapas secuenciales:
+    1. Obtiene la lista base de estaciones desde el mapa/página principal de Conagua.
+    2. Descarga de forma síncrona el identificador real (`real_id`) y el estado (`state_key`) 
+       asociados a cada número de estación.
+    3. Descarga el archivo climatológico de cada estación para extraer sus metadatos geográficos 
+       e institucionales (nombre, municipio, latitud, longitud, elevación, etc.).
+    4. Clasifica las estaciones con fallos de metadatos para guardarlas con valores nulos (para 
+       no perder el registro) y cataloga los nombres de los estados de forma única.
+    5. Guarda de forma masiva (en lotes) la información recolectada en las tablas 'states' y 
+       'stations' utilizando una única conexión de base de datos al final del proceso.
+
+    Métricas registradas por el logger:
+        - total_stations: Cantidad total de estaciones encontradas inicialmente.
+        - skipped_stations: Estaciones descartadas por no devolver ID real o Clave de Estado.
+        - failed_stations: Estaciones sin archivo de metadatos legible (se insertan con valores None).
+
+    Raises:
+        requests.RequestException: Si ocurren fallos críticos de red durante el scraping.
+        sqlite3.Error: Si ocurre una violación de restricciones al insertar los lotes en la base de datos."""
+    max_workers = 8
+    states_to_insert = {}
+    stations_to_insert =[]
+    first_data = get_first_data()
+    logger.info("Found %d stations in first data page", len(first_data))
+
+    skipped_stations = 0
+    failed_stations = 0
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures =[
+            executor.submit(fetch_metadata, station["id_estacion"])
+                for station in first_data[:100]
+        ]
+        total_stations = len(futures)
+
+        for index, future in enumerate(as_completed(futures), start=1):
+            try:
+                result = future.result()
+            except Exception:
+                failed_stations += 1
+                logger.exception("Failed to process one station")
+                continue
+
+            if result is None:
+                skipped_stations += 1
+                continue
+
+            state_row, station_row = result
+            state, state_key = state_row
+
+
+            if state is not None:
+                states_to_insert[state_key] = state
+
+            stations_to_insert.append(station_row)
+
+            if index % 200 == 0:
+                logger.info("Processed %d/%d stations", index, len(first_data))
+    
+    logger.info(
+        "Finished downloading metadata: %d total, %d ready to insert, %d skipped, %d failed",
+        total_stations,
+        len(stations_to_insert),
+        skipped_stations,
+        failed_stations,
+    )
+
+
+    with connect_database(DB_PATH) as conn:
+        load_states_batch(
+            conn,
+            [
+            (state_name, state_key)
+             for state_key, state_name in states_to_insert.items()
+             ],
+        )
+
+        load_stations_batch(conn, stations_to_insert)
+    
+    logger.info("Inserted metadata into database")
+
 def load_initial_metadata()->None:
     """Orquesta el scraping, parseo y almacenamiento del catálogo inicial de estaciones.
 
@@ -297,12 +412,12 @@ def main() -> None:
         else:
             print("La palabra no coincide. Acción abortada.")
     elif args.command == "metadata":
-        load_initial_metadata()
+        load_initial_metadata_conc()
     elif args.command == "update":
         update_all_daily_records()
     elif args.command == "all":
         setup_database()
-        load_initial_metadata()
+        load_initial_metadata_conc()
         update_all_daily_records()
 
 if __name__ == "__main__":
