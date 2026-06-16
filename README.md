@@ -34,6 +34,7 @@ conagua-weather/
 │
 ├── .gitignore           # Safeguards binary databases and virtual environments
 └── README.md
+```
 
 ## Instalation
 
