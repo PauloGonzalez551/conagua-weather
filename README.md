@@ -35,10 +35,9 @@ conagua-weather/
 └── README.md
 ```
 
-=======
 ---
 ## Project installation
->>>>>>> 1eed22d (typo)
+
 
 git clone [https://github.com/PauloGonzalez551/conagua-weather.git](https://github.com/PauloGonzalez551/conagua-weather.git)
 cd conagua-weather
