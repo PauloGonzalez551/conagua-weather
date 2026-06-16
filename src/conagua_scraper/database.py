@@ -60,6 +60,14 @@ def get_existing_state_keys(conn: sqlite3.Connection) -> set[int]:
     cursor.execute("SELECT state_key FROM states")
     return {row[0] for row in cursor.fetchall()}
 
+def latest_dates_per_station(conn:sqlite3.Connection)->dict:
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT station_number, MAX(date)" \
+    "FROM daily_records " \
+    "GROUP BY station_number")
+    return dict(cursor.fetchall())
+
 
 def load_states_batch(
     conn: sqlite3.Connection,
@@ -124,6 +132,7 @@ def key_id_from_db(conn:sqlite3.Connection)->list[tuple[str, str]]:
     """
     cursor = conn.cursor()
 
-    cursor.execute('''SELECT state_key, real_id , station_number FROM stations''')
+    cursor.execute('''SELECT state_key, real_id , station_number 
+                   FROM stations''')
 
     return cursor.fetchall()

@@ -12,6 +12,7 @@ from conagua_scraper.database import (connect_database,
                                     load_stations_batch,
                                     load_daily_data_batch,
                                     key_id_from_db,
+                                    latest_dates_per_station
                                     )
 from conagua_scraper.scraper import (get_first_data,
                                     get_key_real_id_file,
@@ -274,7 +275,7 @@ def load_initial_metadata()->None:
     
     logger.info("Inserted metadata into database")
 
-def fetch_daily_record(state_key:str, real_id:str, station_number:str)->list[tuple]:
+def fetch_daily_record(state_key:str, real_id:str, station_number:str, latest_date: str|None = None)->list[tuple]:
     """Descarga, limpia y estructura el registro histórico diario de una estación.
     
     Solicita la sesión HTTP persistente asignada al hilo actual, descarga el
@@ -302,7 +303,13 @@ def fetch_daily_record(state_key:str, real_id:str, station_number:str)->list[tup
                        state_key=state_key,
                        real_id=real_id)
                        )
-    return daily_data(raw_data, station_number)
+    all_records = daily_data(raw_data, station_number)
+
+    if latest_date:
+        new_records = [row for row in all_records if row[1]>latest_date]
+        return new_records
+
+    return all_records
 
 def update_all_daily_records()->None:
     """Descarga y actualiza de forma concurrente los registros climáticos diarios.
@@ -326,11 +333,18 @@ def update_all_daily_records()->None:
 
     with connect_database(DB_PATH) as conn:
         keys_ids = key_id_from_db(conn)
+        latest_dates_map = latest_dates_per_station(conn)
 
     with connect_database(DB_PATH) as conn:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
-                    executor.submit(fetch_daily_record, state_key, real_id, station_number)
+                    executor.submit(
+                        fetch_daily_record,
+                        state_key,
+                        real_id,
+                        station_number,
+                        latest_dates_map.get('station_number')
+                    )
                     for state_key, real_id, station_number in keys_ids
                 ]
             total_stations = len(futures)
