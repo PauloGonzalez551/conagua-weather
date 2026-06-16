@@ -127,7 +127,7 @@ def load_initial_metadata_conc()->None:
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures =[
             executor.submit(fetch_metadata, station["id_estacion"])
-                for station in first_data[:100]
+                for station in first_data
         ]
         total_stations = len(futures)
 
@@ -331,7 +331,7 @@ def update_all_daily_records()->None:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                     executor.submit(fetch_daily_record, state_key, real_id, station_number)
-                    for state_key, real_id, station_number in keys_ids[1000:]
+                    for state_key, real_id, station_number in keys_ids
                 ]
             total_stations = len(futures)
 
