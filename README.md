@@ -3,7 +3,6 @@
 A high-performance, concurrent Python scraper designed to systematically extract, parse, and store the complete catalog of weather stations and historical daily climate records from Mexico's National Meteorological Service (**SMN / Conagua**).
 
 This project focuses on executing robust network operations under harsh server conditions, utilizing concurrent threading architectures and relational storage to build a reliable local climate database.
-```
 ---
 
 ##  Key Features
